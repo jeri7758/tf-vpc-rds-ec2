@@ -71,6 +71,17 @@ resource "aws_iam_instance_profile" "new_profile" {
   role = aws_iam_role.s3_role.name
 }
 
+# change USERDATA varible value after grabbing RDS endpoint info
+data "template_file" "user_data" {
+  template = var.IsUbuntu ? var.userdata_option1 : var.userdata_option2
+  vars = {
+    db_username      = var.database_user
+    db_user_password = var.database_password
+    db_name          = var.database_name
+    db_RDS           = aws_db_instance.DataBase.endpoint
+  }
+}
+
 //Creating 2 EC2 instances using count
 
 resource "aws_instance" "inst1" {
@@ -81,19 +92,17 @@ resource "aws_instance" "inst1" {
   subnet_id              = var.subnet_id
   key_name               = aws_key_pair.deployer.key_name
   vpc_security_group_ids = [aws_security_group.sec_group1.id]
-  user_data              = var.user_data
+  user_data              = data.template_file.user_data.rendered
   ebs_block_device {
     device_name = var.device_name
     volume_size = var.volume_size
     volume_type = var.volume_type
   }
-  depends_on = [aws_security_group.sec_group1, aws_security_group.alb_sec_group1]
+  depends_on = [aws_security_group.sec_group1, aws_security_group.alb_sec_group1, aws_security_group.SG_private_subnet_, aws_db_instance.DataBase]
   tags = {
     Name = title("${local.env}-ec2-instance")
   }
 }
-
-
 
 //Application load balancer [created security group and ALB]
 
@@ -172,10 +181,10 @@ resource "aws_lb_target_group" "aws-tg" {
 
 //Target group attachment
 resource "aws_lb_target_group_attachment" "lb-tgattach" {
-  count            = length(aws_instance.inst1.*.id)
-  target_group_arn = aws_lb_target_group.aws-tg.arn
-  target_id        = element(aws_instance.inst1.*.id, count.index)
-  port             = 80
+count            = length(aws_instance.inst1.*.id)
+target_group_arn = aws_lb_target_group.aws-tg.arn
+target_id        = element(aws_instance.inst1.*.id, count.index)
+port             = 80
 }
 
 
@@ -208,6 +217,14 @@ resource "aws_security_group" "sec_group1" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description      = "SSH access"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    security_groups = [aws_security_group.bastion_host.id]
+  }  
+
   egress {
     from_port        = 0
     to_port          = 0
@@ -237,7 +254,7 @@ resource "aws_launch_configuration" "aws_autoscale_conf" {
   instance_type = var.as_instance_type
   # Defining the Key that will be used to access the AWS EC2 instance
   key_name        = aws_key_pair.deployer.key_name
-  user_data       = var.user_data
+  user_data       = data.template_file.user_data.rendered
   security_groups = [aws_security_group.sec_group1.id]
 }
 
@@ -292,4 +309,97 @@ resource "aws_autoscaling_policy" "mygroup_policy" {
 resource "aws_autoscaling_attachment" "asg_attachment_bar" {
   autoscaling_group_name = aws_autoscaling_group.mygroup.id
   lb_target_group_arn    = aws_lb_target_group.aws-tg.arn
+}
+
+///RDS START
+
+#EC2 for bastion host 
+resource "aws_instance" "bastion_host" {
+  ami           = data.aws_ami.amzlinux2.id
+  instance_type = var.rds_instance_type
+  subnet_id = var.pb_subnet
+  key_name = aws_key_pair.deployer1.key_name
+  vpc_security_group_ids = [aws_security_group.bastion_host.id]      
+  tags = {
+     Name = title("${local.env}-bastion_host")
+  } 
+
+provisioner "file" {
+    source = var.source_key
+    destination = var.destination_key
+    
+    connection {
+      type = "ssh"
+      user = "ec2-user"
+      private_key = var.private_key_path
+      host = aws_instance.bastion_host.public_ip
+    }
+}
+}
+
+# Launching RDS db instance
+resource "aws_db_instance" "DataBase" {
+  allocated_storage    = var.rds_allocated_storage
+  max_allocated_storage = var.rds_max_allocated_storage
+  storage_type         = var.rds_storage_type
+  engine               = var.rds_engine
+  engine_version       = var.rds_engine_version
+  instance_class       = var.rds_instance_class
+  db_name                 = "${var.database_name}"
+  username             = "${var.database_user}"
+  password             = "${var.database_password}"
+  port = var.rds_port
+  parameter_group_name = var.rds_pm_groupname
+  publicly_accessible = false
+  db_subnet_group_name = var.db_subnet_name
+  vpc_security_group_ids = [aws_security_group.SG_private_subnet_.id]
+  skip_final_snapshot = true 
+
+provisioner "local-exec" {
+  command = "echo ${aws_db_instance.DataBase.endpoint} > DB_host.txt"
+    }
+}
+
+# Creating security group for bastion host
+resource "aws_security_group" "bastion_host" {
+  name        = "bastion_host_SG"
+  description = "Allow SSH"
+  vpc_id      =  var.vpc_id             
+
+  ingress {
+    description = "SSH from VPC"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+
+# Creating a new security group for RDS 
+resource "aws_security_group" "SG_private_subnet_" {
+  name        = "MYSQL_security_group"
+  description = "MYSQL"
+  vpc_id      = var.vpc_id              
+
+  ingress {
+    description = "MYSQL Port"
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    security_groups = [aws_security_group.sec_group1.id, aws_security_group.bastion_host.id]
+  }
+  
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }

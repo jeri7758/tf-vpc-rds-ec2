@@ -14,9 +14,9 @@ variable "key_name" {
     type = string
 }
 
-variable "user_data" {
-    type = string
-}
+#variable "user_data" {
+#    type = string
+#}
 
 variable "public_key" {
     type = string
@@ -155,5 +155,78 @@ variable "as_subnet" {
 }
 
 variable "vpc_id" {
+    type = string
+}
+
+variable "database_name" {
+    type = string
+}
+variable "database_password" {
+    type = string
+}
+variable "database_user" {
+    type = string
+}
+
+//variable "shared_credentials_file" {}
+
+variable "IsUbuntu" {
+  type    = bool
+}
+
+variable "userdata_option1" {
+    type = string
+}
+
+variable "userdata_option2" {
+    type = string
+}
+
+variable "pb_subnet" {
+    type = string
+}
+
+variable "db_subnet_name" {
+    type = string
+}
+
+variable "rds_instance_type" {
+    type = string
+}
+
+variable "source_key" {
+    type = string
+}
+
+variable "destination_key" {
+    type = string
+}
+
+variable "private_key_path" {
+    type = string
+}
+
+variable "rds_allocated_storage" {
+    type = number
+}
+variable "rds_max_allocated_storage" {
+    type = number
+}
+variable "rds_storage_type" {
+    type = string
+}
+variable "rds_engine" {
+    type = string
+}
+variable "rds_engine_version" {
+    type = string
+}
+variable "rds_instance_class" {
+    type = string
+}
+variable "rds_port" {
+    type = number
+}
+variable "rds_pm_groupname" {
     type = string
 }

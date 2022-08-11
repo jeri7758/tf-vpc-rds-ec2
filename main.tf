@@ -21,7 +21,7 @@ module "vpc" {
   priv_cidr_block   = ["10.0.128.0/18", "10.0.192.0/18"]
   az                = ["us-east-1a", "us-east-1b"]
   nat_gateway_count = 1
-  //variable "shared_credentials_file" {}
+  //"shared_credentials_file" {}
   enable_dns_support   = true
   enable_dns_hostnames = true
 }
@@ -29,7 +29,8 @@ module "vpc" {
 #EC2 module
 module "ec2" {
   source    = "./modules/terraform-ec2"
-  user_data = file("./modules/terraform-ec2/install_apache.sh")
+  userdata_option1 = file("./modules/terraform-ec2/userdata_ubuntu.tpl")
+  userdata_option2 = file("./modules/terraform-ec2/user_data.tpl")
   #user_data = file("${path.module}/install_apache.sh")
   subnet_id         = module.vpc.private_subnet1
   alb_subnet        = module.vpc.public_subnets
@@ -68,4 +69,23 @@ module "ec2" {
   as_scaling_adjustment        = 2
   as_scaling_adjustment_type   = "ChangeInCapacity"
   as_cooldown                  = 300
+  database_name           = "wordpress_db"   // database name
+  database_user           = "wordpress_user" //database username
+  //shared_credentials_file = "~/.aws"         //Access key and Secret key file location
+  IsUbuntu                = false             // true for ubuntu,false for linux 2  //boolean type
+  pb_subnet = module.vpc.public_subnet1
+  db_subnet_name = module.vpc.db_subnet_group_name
+  database_password = "PassWord4-user" //password for user database
+  rds_instance_type = "t2.micro"
+  rds_port = 3306
+  source_key = "./ec2-key.pem"
+  destination_key = "/home/ec2-user/ec2-key.pem"
+  private_key_path = file("~/.ssh/id_rsa")
+  rds_allocated_storage =  20
+  rds_max_allocated_storage = 100
+  rds_storage_type = "gp2"
+  rds_engine = "mysql"
+  rds_engine_version =  "5.7.22"
+  rds_instance_class = "db.t2.micro"
+  rds_pm_groupname = "default.mysql5.7"
 }
